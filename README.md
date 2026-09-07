@@ -25,3 +25,9 @@ hermes-self-healing-context/
 │   └── fts5_memory_patcher.py  # SQLite FTS5 Context Retrieval Engine
 └── tests/
     └── test_self_healing.py    # Unit & Integration Tests
+
+## Installation
+Clone into your local Hermes plugins directory:
+mkdir -p ~/.hermes/plugins
+git clone [https://github.com/forumevi/hermes-self-healing-context.git](https://github.com/forumevi/hermes-self-healing-context.git) ~/.hermes/plugins/hermes-self-healing-context
+

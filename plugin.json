@@ -1,0 +1,14 @@
+{
+  "name": "hermes-self-healing-context",
+  "version": "1.0.0",
+  "description": "Autonomous runtime exception interceptor and FTS5 memory patcher for Hermes Agent.",
+  "main": "plugin.py",
+  "author": "forumevi",
+  "tags": [
+    "memory",
+    "self-healing",
+    "runtime",
+    "context-engine",
+    "fts5"
+  ]
+}

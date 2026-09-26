@@ -31,3 +31,10 @@ Clone into your local Hermes plugins directory:
 mkdir -p ~/.hermes/plugins
 git clone [https://github.com/forumevi/hermes-self-healing-context.git](https://github.com/forumevi/hermes-self-healing-context.git) ~/.hermes/plugins/hermes-self-healing-context
 
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
+
+## Contributing
+
+Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com/forumevi/hermes-self-healing-context/issues).

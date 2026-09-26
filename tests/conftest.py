@@ -14,11 +14,24 @@ def temp_db(tmp_path):
     db_path = str(tmp_path / "test_memory.db")
     conn = sqlite3.connect(db_path)
     
+    # Create content table
+    conn.execute("""
+        CREATE TABLE error_patterns_content (
+            rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+            error_type TEXT NOT NULL,
+            error_message TEXT NOT NULL,
+            fix_pattern TEXT NOT NULL,
+            success_count INTEGER DEFAULT 0,
+            failure_count INTEGER DEFAULT 0
+        )
+    """)
+    
     # Create FTS5 table
     conn.execute("""
-        CREATE VIRTUAL TABLE error_patterns USING fts5(
+        CREATE VIRTUAL TABLE error_patterns_fts USING fts5(
             error_type, error_message, fix_pattern,
-            success_count, failure_count
+            content=error_patterns_content,
+            content_rowid=rowid
         )
     """)
     
@@ -31,7 +44,7 @@ def temp_db(tmp_path):
     
     for error_type, message, fix, success, failure in test_data:
         conn.execute(
-            """INSERT INTO error_patterns 
+            """INSERT INTO error_patterns_content 
                (error_type, error_message, fix_pattern, success_count, failure_count)
                VALUES (?, ?, ?, ?, ?)""",
             (error_type, message, fix, success, failure)
@@ -49,6 +62,7 @@ def sample_plugin():
     from plugin import HermesSelfHealingPlugin
     
     plugin = HermesSelfHealingPlugin(config={
+        "db_path": ":memory:",
         "enable_learning": False,
         "auto_retry": False
     })

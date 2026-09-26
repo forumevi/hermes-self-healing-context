@@ -7,7 +7,7 @@ analyzes error patterns, and coordinates with MemoryPatcher for context injectio
 
 import time
 import traceback
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 
 
 # Transient errors that benefit from auto-retry
@@ -18,6 +18,16 @@ TRANSIENT_ERRORS = {
     "TemporaryNetworkError",
     "ServiceUnavailableError"
 }
+
+
+class RuntimeHealedException(Exception):
+    """
+    Custom exception raised when self-healing intervention occurs.
+    Contains the original error and the generated context patch.
+    """
+    def __init__(self, message: str, context_patch: str):
+        super().__init__(message)
+        self.context_patch = context_patch
 
 
 class SelfHealingInterceptor:
@@ -59,8 +69,6 @@ class SelfHealingInterceptor:
         Returns:
             Context patch string if fix found, None otherwise
         """
-        start_time = time.time()
-        
         # Classify error
         is_transient = error_type in TRANSIENT_ERRORS
         
@@ -75,9 +83,6 @@ class SelfHealingInterceptor:
             pattern_analysis=pattern_analysis
         )
         
-        # Record metrics
-        latency_ms = (time.time() - start_time) * 1000
-        
         if patch:
             self._record_error(error_type, error_message, success=True)
             return patch
@@ -85,7 +90,7 @@ class SelfHealingInterceptor:
             self._record_error(error_type, error_message, success=False)
             return None
 
-    def execute_with_protection(self, func, *args, **kwargs) -> Any:
+    def execute_with_protection(self, func: Callable, *args, **kwargs) -> Any:
         """
         Execute a function with exception protection and auto-retry.
         
@@ -95,6 +100,9 @@ class SelfHealingInterceptor:
             
         Returns:
             Function result or None if failed after retries
+            
+        Raises:
+            RuntimeHealedException: If self-healing intervention occurs
         """
         last_exception = None
         
@@ -120,6 +128,8 @@ class SelfHealingInterceptor:
                     continue
                 
                 # Permanent error or max retries exceeded
+                if patch:
+                    raise RuntimeHealedException(str(e), patch)
                 break
         
         # All attempts failed

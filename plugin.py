@@ -15,14 +15,14 @@ Features:
 - Connection pooling and graceful shutdown
 
 Plugin Hooks (Hermes Agent Standard):
-- on_session_start: Initialize engine
-- on_session_end: Graceful shutdown
-- post_tool_call: Intercept exceptions after tool execution
-- pre_llm_call: Inject context patches before LLM calls
+- on_session_start(session_id, context)
+- on_session_end(session_id, context)
+- post_tool_call(tool_name, tool_args, tool_result, context)
+- pre_llm_call(messages, context) -> Optional[str]
 """
 
 import time
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, List
 
 
 from core.runtime_interceptor import SelfHealingInterceptor
@@ -81,7 +81,7 @@ class HermesSelfHealingPlugin:
         self.metrics = MetricsCollector()
         
         # Pending patches to inject into context
-        self._pending_patches: list = []
+        self._pending_patches: List[str] = []
         
         # Feature flags for logging
         learning_enabled = self.config.get("enable_learning", True)
@@ -93,7 +93,7 @@ class HermesSelfHealingPlugin:
         print("  - Performance metrics tracking: ENABLED")
         print("  - Confidence scoring: ENABLED")
 
-    def on_session_start(self, context: Optional[Dict[str, Any]] = None) -> None:
+    def on_session_start(self, session_id: str, context: Dict[str, Any]) -> None:
         """
         Called when a new Hermes Agent session starts.
         
@@ -101,13 +101,14 @@ class HermesSelfHealingPlugin:
         to ensure clean session isolation.
         
         Args:
-            context: Optional session context dictionary
+            session_id: Unique session identifier
+            context: Session context dictionary
         """
-        print("[Hermes-Self-Healing] Engine active. Monitoring execution loop...")
+        print(f"[Hermes-Self-Healing] Engine active for session {session_id}. Monitoring execution loop...")
         self.metrics.record_session_start()
         self.analyzer.clear_history()
 
-    def on_session_end(self, context: Optional[Dict[str, Any]] = None) -> None:
+    def on_session_end(self, session_id: str, context: Dict[str, Any]) -> None:
         """
         Called when Hermes Agent session ends.
         
@@ -115,8 +116,12 @@ class HermesSelfHealingPlugin:
         - Closes database connection
         - Prints session metrics summary
         - Provides recommendations based on error patterns
+        
+        Args:
+            session_id: Unique session identifier
+            context: Session context dictionary
         """
-        print("[Hermes-Self-Healing] Shutting down gracefully...")
+        print(f"[Hermes-Self-Healing] Shutting down gracefully for session {session_id}...")
         
         # Close database connection (critical for preventing locks)
         self.patcher.close()
@@ -138,78 +143,68 @@ class HermesSelfHealingPlugin:
 
     def post_tool_call(
         self, 
-        context: Optional[Dict[str, Any]] = None, 
-        result: Optional[Dict[str, Any]] = None
+        tool_name: str, 
+        tool_args: Dict[str, Any], 
+        tool_result: Dict[str, Any], 
+        context: Dict[str, Any]
     ) -> None:
         """
         Called after each tool execution by Hermes Agent.
         
         Intercepts exceptions and generates context patches for later injection.
-        Handles multiple result formats defensively:
-        - result.get("error") as string
-        - result.get("error") as Exception object
-        - result.get("exception") as Exception object
         
         Args:
-            context: Optional tool execution context
-            result: Optional tool execution result dictionary
+            tool_name: Name of the tool that was executed
+            tool_args: Arguments passed to the tool
+            tool_result: Tool execution result dictionary
+                Format: {"success": bool, "output": str, "error": str, "error_type": str}
+            context: Tool execution context
         """
-        if not result:
-            return
-        
-        # Extract error information defensively (handle multiple formats)
-        error = result.get("error") or result.get("exception")
-        
-        if not error:
-            return
-        
-        # Normalize error to string and type
-        if isinstance(error, Exception):
-            error_type = type(error).__name__
-            error_message = str(error)
-        elif isinstance(error, str):
-            error_type = result.get("error_type", "UnknownError")
-            error_message = error
-        else:
-            error_type = "UnknownError"
-            error_message = str(error)
-        
-        # Record error for pattern analysis
-        self.analyzer.record_error(error_type, error_message, context)
-        
-        # Intercept and generate context patch
-        start_time = time.time()
-        patch = self.interceptor.intercept_error(error_type, error_message)
-        latency_ms = (time.time() - start_time) * 1000
-        
-        # Record metrics
-        self.metrics.record_error_intercepted(latency_ms)
-        
-        if patch:
-            self._pending_patches.append(patch)
-            self.metrics.record_patch_generated()
-            print(f"[Hermes-Self-Healing] Generated context patch for: {error_type}")
+        # Check if tool execution failed
+        if not tool_result.get("success", True):
+            # Extract error information
+            error_message = tool_result.get("error", "Unknown error")
+            error_type = tool_result.get("error_type", type(error_message).__name__)
+            
+            # Record error for pattern analysis
+            self.analyzer.record_error(error_type, error_message, {
+                "tool_name": tool_name,
+                "tool_args": tool_args
+            })
+            
+            # Intercept and generate context patch
+            start_time = time.time()
+            patch = self.interceptor.intercept_error(error_type, error_message)
+            latency_ms = (time.time() - start_time) * 1000
+            
+            # Record metrics
+            self.metrics.record_error_intercepted(latency_ms)
+            
+            if patch:
+                self._pending_patches.append(patch)
+                self.metrics.record_patch_generated()
+                print(f"[Hermes-Self-Healing] Generated context patch for: {error_type} (from tool: {tool_name})")
 
     def pre_llm_call(
         self, 
-        context: Optional[Dict[str, Any]] = None
-    ) -> Union[str, Dict[str, Any]]:
+        messages: List[Dict[str, Any]], 
+        context: Dict[str, Any]
+    ) -> Optional[str]:
         """
         Called before each LLM call by Hermes Agent.
         
         Injects accumulated context patches into the prompt.
-        Supports multiple return formats for compatibility:
-        - Returns string: Hermes appends to system prompt
-        - Returns dict: Hermes merges with context
+        Returns a string that Hermes will automatically append to the system prompt.
         
         Args:
-            context: Optional LLM call context dictionary
+            messages: List of message dictionaries to be sent to LLM
+            context: LLM call context dictionary
             
         Returns:
-            Union[str, Dict[str, Any]]: Patches to inject, or empty string/dict
+            Optional[str]: Patches to inject into system prompt, or None if no patches
         """
         if not self._pending_patches:
-            return ""
+            return None
         
         # Combine all pending patches
         patches_text = "\n\n".join(self._pending_patches)
@@ -219,20 +214,7 @@ class HermesSelfHealingPlugin:
         self.metrics.record_context_injection()
         print(f"[Hermes-Self-Healing] Injected patches into context")
         
-        # Return patches as string (Hermes will append to system prompt)
-        # If context dict is provided and has system_prompt, mutate it directly
-        if context and isinstance(context, dict):
-            if "system_prompt" in context:
-                context["system_prompt"] += f"\n\n{patches_text}"
-                return context
-            elif "messages" in context and isinstance(context["messages"], list):
-                context["messages"].append({
-                    "role": "system",
-                    "content": patches_text
-                })
-                return context
-        
-        # Fallback: return as string for Hermes to handle
+        # Return patches as string - Hermes will automatically append to system prompt
         return patches_text
 
     def get_status(self) -> Dict[str, Any]:

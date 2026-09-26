@@ -80,7 +80,7 @@ class ErrorAnalyzer:
         
         if len(recent_errors) > 10:
             recommendations.append(
-                f"🚨 **Error Burst:** {len(recent_errors)} errors in the last 5 minutes. "
+                f" **Error Burst:** {len(recent_errors)} errors in the last 5 minutes. "
                 f"System may be unstable."
             )
         

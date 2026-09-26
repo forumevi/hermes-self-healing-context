@@ -38,3 +38,26 @@ MIT License. See [LICENSE](LICENSE) for details.
 ## Contributing
 
 Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com/forumevi/hermes-self-healing-context/issues).
+# Hermes Self-Healing Context Plugin
+
+**Version:** 2.0.0  
+**Status:** Production Ready  
+**License:** MIT
+
+Advanced self-healing engine for Hermes Agent that intercepts runtime errors, queries FTS5 memory for historical fixes, and dynamically patches the context window for zero-downtime recovery.
+
+## Features
+
+- **Runtime Exception Interception:** Catches TypeError, ConnectionError, and other exceptions before they crash the agent
+- **FTS5 Memory Patching:** Queries local SQLite FTS5 database for historical fix patterns
+- **Auto-Retry:** Automatically retries transient errors with exponential backoff
+- **Pattern Learning:** Learns from successful/unsuccessful patches to improve future recommendations
+- **Confidence Scoring:** Provides reliability scores for each fix recommendation
+- **Performance Metrics:** Tracks latency, hit rate, and error patterns
+- **Security:** SQL injection prevention and input sanitization
+- **Graceful Shutdown:** Proper resource cleanup and connection management
+
+## Installation
+
+```bash
+git clone https://github.com/forumevi/hermes-self-healing-context.git ~/.hermes/plugins/hermes-self-healing-context

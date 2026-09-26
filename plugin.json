@@ -4,11 +4,19 @@
   "description": "Autonomous runtime exception interceptor and FTS5 memory patcher for Hermes Agent.",
   "main": "plugin.py",
   "author": "forumevi",
+  "license": "MIT",
+  "category": "stability",
   "tags": [
     "memory",
     "self-healing",
     "runtime",
     "context-engine",
     "fts5"
-  ]
+  ],
+  "repository": "https://github.com/forumevi/hermes-self-healing-context",
+  "homepage": "https://github.com/forumevi/hermes-self-healing-context#readme",
+  "compatibility": {
+    "platforms": ["linux", "macos", "windows"],
+    "hermes_version": ">=0.1.0"
+  }
 }

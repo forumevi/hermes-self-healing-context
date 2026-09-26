@@ -3,6 +3,8 @@ FTS5 Memory Patcher with Connection Pooling and Learning.
 
 Queries SQLite FTS5 memory for historical error fix patterns
 and generates context patches for dynamic injection.
+
+Uses content table pattern for proper FTS5 INSERT support.
 """
 
 import sqlite3
@@ -23,6 +25,7 @@ class MemoryPatcher:
     - Confidence scoring based on pattern similarity
     - Learning from successful/unsuccessful patches
     - SQL injection prevention
+    - Content table pattern for proper FTS5 support
     """
     
     def __init__(
@@ -39,7 +42,7 @@ class MemoryPatcher:
         
         # Connection pool (single connection for now, can be extended)
         self._conn: Optional[sqlite3.Connection] = None
-        self._ensure_fts5_table()
+        self._ensure_fts5_tables()
         
         # Query cache
         self._cache: Dict[str, Dict[str, Any]] = {}
@@ -50,8 +53,12 @@ class MemoryPatcher:
     def _get_connection(self):
         """Context manager for safe connection handling."""
         if self._conn is None:
-            self._conn = sqlite3.connect(self.db_path, timeout=5.0)
-            self._conn.row_factory = sqlite3.Row
+            try:
+                self._conn = sqlite3.connect(self.db_path, timeout=5.0)
+                self._conn.row_factory = sqlite3.Row
+            except sqlite3.Error as e:
+                print(f"[MemoryPatcher] Failed to connect: {e}")
+                raise
         
         try:
             yield self._conn
@@ -59,25 +66,67 @@ class MemoryPatcher:
             print(f"[MemoryPatcher] Database error: {e}")
             self._conn = None  # Reset connection on error
             raise
-        finally:
-            pass  # Don't close connection here, reuse it
 
-    def _ensure_fts5_table(self):
-        """Ensure FTS5 table exists for error pattern storage."""
+    def _ensure_fts5_tables(self):
+        """Ensure FTS5 tables exist with content table pattern."""
         try:
             with self._get_connection() as conn:
+                # Create content table (normal table for INSERT)
                 conn.execute("""
-                    CREATE VIRTUAL TABLE IF NOT EXISTS error_patterns USING fts5(
-                        error_type,
-                        error_message,
-                        fix_pattern,
-                        success_count,
-                        failure_count
+                    CREATE TABLE IF NOT EXISTS error_patterns_content (
+                        rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+                        error_type TEXT NOT NULL,
+                        error_message TEXT NOT NULL,
+                        fix_pattern TEXT NOT NULL,
+                        success_count INTEGER DEFAULT 0,
+                        failure_count INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
+                
+                # Create FTS5 virtual table (index for MATCH queries)
+                conn.execute("""
+                    CREATE VIRTUAL TABLE IF NOT EXISTS error_patterns_fts USING fts5(
+                        error_type, error_message, fix_pattern,
+                        content=error_patterns_content,
+                        content_rowid=rowid,
+                        tokenize="porter unicode61"
+                    )
+                """)
+                
+                # Create triggers for automatic sync
+                conn.execute("""
+                    CREATE TRIGGER IF NOT EXISTS error_patterns_ai AFTER INSERT ON error_patterns_content BEGIN
+                        INSERT INTO error_patterns_fts(rowid, error_type, error_message, fix_pattern)
+                        VALUES (new.rowid, new.error_type, new.error_message, new.fix_pattern);
+                    END;
+                """)
+                
+                conn.execute("""
+                    CREATE TRIGGER IF NOT EXISTS error_patterns_ad AFTER DELETE ON error_patterns_content BEGIN
+                        INSERT INTO error_patterns_fts(error_patterns_fts, rowid, error_type, error_message, fix_pattern)
+                        VALUES ('delete', old.rowid, old.error_type, old.error_message, old.fix_pattern);
+                    END;
+                """)
+                
+                conn.execute("""
+                    CREATE TRIGGER IF NOT EXISTS error_patterns_au AFTER UPDATE ON error_patterns_content BEGIN
+                        INSERT INTO error_patterns_fts(error_patterns_fts, rowid, error_type, error_message, fix_pattern)
+                        VALUES ('delete', old.rowid, old.error_type, old.error_message, old.fix_pattern);
+                        INSERT INTO error_patterns_fts(rowid, error_type, error_message, fix_pattern)
+                        VALUES (new.rowid, new.error_type, new.error_message, new.fix_pattern);
+                    END;
+                """)
+                
                 conn.commit()
-        except sqlite3.Error:
-            print("[MemoryPatcher] FTS5 not available, using fallback mode")
+                print("[MemoryPatcher] FTS5 tables initialized successfully")
+                
+        except sqlite3.Error as e:
+            print(f"[MemoryPatcher] FTS5 initialization failed: {e}")
+            if self._conn:
+                self._conn.close()
+                self._conn = None
+            raise
 
     def inject_context_patch(
         self,
@@ -145,12 +194,13 @@ class MemoryPatcher:
             with self._get_connection() as conn:
                 # Use FTS5 MATCH query with parameterized inputs
                 query = """
-                    SELECT error_type, error_message, fix_pattern, 
-                           success_count, failure_count,
-                           rank
-                    FROM error_patterns
-                    WHERE error_patterns MATCH ?
-                    ORDER BY rank
+                    SELECT c.error_type, c.error_message, c.fix_pattern, 
+                           c.success_count, c.failure_count,
+                           fts.rank
+                    FROM error_patterns_fts fts
+                    JOIN error_patterns_content c ON fts.rowid = c.rowid
+                    WHERE error_patterns_fts MATCH ?
+                    ORDER BY fts.rank
                     LIMIT 5
                 """
                 
@@ -249,7 +299,7 @@ class MemoryPatcher:
         """
         Learn from patch outcome to improve future recommendations.
         
-        Updates FTS5 table with success/failure counts.
+        Inserts or updates error pattern in FTS5 content table.
         """
         if not self.enable_learning:
             return
@@ -258,7 +308,7 @@ class MemoryPatcher:
             with self._get_connection() as conn:
                 # Check if pattern exists
                 cursor = conn.execute(
-                    "SELECT rowid, success_count, failure_count FROM error_patterns WHERE fix_pattern = ?",
+                    "SELECT rowid, success_count, failure_count FROM error_patterns_content WHERE fix_pattern = ?",
                     (fix_pattern,)
                 )
                 row = cursor.fetchone()
@@ -267,18 +317,18 @@ class MemoryPatcher:
                     # Update existing pattern
                     if success:
                         conn.execute(
-                            "UPDATE error_patterns SET success_count = success_count + 1 WHERE rowid = ?",
+                            "UPDATE error_patterns_content SET success_count = success_count + 1 WHERE rowid = ?",
                             (row["rowid"],)
                         )
                     else:
                         conn.execute(
-                            "UPDATE error_patterns SET failure_count = failure_count + 1 WHERE rowid = ?",
+                            "UPDATE error_patterns_content SET failure_count = failure_count + 1 WHERE rowid = ?",
                             (row["rowid"],)
                         )
                 else:
                     # Insert new pattern
                     conn.execute(
-                        """INSERT INTO error_patterns 
+                        """INSERT INTO error_patterns_content 
                            (error_type, error_message, fix_pattern, success_count, failure_count)
                            VALUES (?, ?, ?, ?, ?)""",
                         (error_type, error_message, fix_pattern, 

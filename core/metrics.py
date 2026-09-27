@@ -1,79 +1,38 @@
-"""
-Performance Metrics Collector for Self-Healing Plugin.
+import logging
+from typing import Optional
 
-Tracks plugin performance, hit rates, and latency.
-"""
+logger = logging.getLogger(__name__)
 
-import time
-from typing import Dict, Any
-from collections import deque
-
-
-class MetricsCollector:
+class MetricsTracker:
     """
-    Collects and reports plugin performance metrics.
-    
-    Tracks:
-    - Total errors intercepted
-    - Successful patches generated
-    - Context injections
-    - Average latency
-    - Hit rate (successful patches / total errors)
+    Simple metrics tracker for the self-healing plugin.
+    Tracks session starts/ends and basic error counts.
     """
     
-    def __init__(self, max_history: int = 10000):
-        self.max_history = max_history
-        
-        # Counters
-        self.total_errors = 0
-        self.successful_patches = 0
-        self.context_injections = 0
-        self.session_starts = 0
-        
-        # Latency tracking
-        self.latencies: deque = deque(maxlen=max_history)
-        
-        # Session tracking
-        self.session_start_time: float = time.time()
+    def __init__(self):
+        self.current_session: Optional[str] = None
+        self.error_count: int = 0
+        self.patch_count: int = 0
     
-    def record_session_start(self):
-        """Record session start."""
-        self.session_starts += 1
-        self.session_start_time = time.time()
+    def start_session(self, session_id: str) -> None:
+        """Called when a new session starts."""
+        self.current_session = session_id
+        self.error_count = 0
+        self.patch_count = 0
+        logger.debug(f"[Metrics] Session {session_id} started")
     
-    def record_error_intercepted(self, latency_ms: float):
-        """Record an intercepted error."""
-        self.total_errors += 1
-        self.latencies.append(latency_ms)
+    def end_session(self, session_id: str) -> None:
+        """Called when a session ends."""
+        logger.info(
+            f"[Metrics] Session {session_id} ended - "
+            f"Errors: {self.error_count}, Patches: {self.patch_count}"
+        )
+        self.current_session = None
     
-    def record_patch_generated(self):
-        """Record a successful patch generation."""
-        self.successful_patches += 1
+    def record_error(self) -> None:
+        """Record an error occurrence."""
+        self.error_count += 1
     
-    def record_context_injection(self):
-        """Record a context injection."""
-        self.context_injections += 1
-    
-    def get_summary(self) -> Dict[str, Any]:
-        """Get metrics summary."""
-        avg_latency = sum(self.latencies) / len(self.latencies) if self.latencies else 0
-        hit_rate = (self.successful_patches / self.total_errors * 100) if self.total_errors > 0 else 0
-        
-        return {
-            "total_errors": self.total_errors,
-            "successful_patches": self.successful_patches,
-            "context_injections": self.context_injections,
-            "session_starts": self.session_starts,
-            "avg_latency_ms": avg_latency,
-            "hit_rate": hit_rate,
-            "uptime_seconds": time.time() - self.session_start_time
-        }
-    
-    def reset(self):
-        """Reset all metrics."""
-        self.total_errors = 0
-        self.successful_patches = 0
-        self.context_injections = 0
-        self.session_starts = 0
-        self.latencies.clear()
-        self.session_start_time = time.time()
+    def record_patch(self) -> None:
+        """Record a successful patch injection."""
+        self.patch_count += 1

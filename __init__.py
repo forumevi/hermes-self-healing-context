@@ -1,4 +1,7 @@
-from .plugin import HermesSelfHealingPlugin
+try:
+    from .plugin import HermesSelfHealingPlugin
+except ImportError:
+    from plugin import HermesSelfHealingPlugin
 
 def register(ctx):
     """

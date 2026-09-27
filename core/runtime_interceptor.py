@@ -19,13 +19,7 @@ class RuntimeInterceptor:
             logger.warning("[RuntimeInterceptor] No historical patch found. Generating generic fallback.")
             fallback_patch = f"System Note: Previous tool '{tool_name}' failed with {error_type}. Please adjust parameters or try an alternative approach."
             self._pending_patches[session_id] = fallback_patch
-            
-            self.patcher.learn_from_outcome(
-                error_type=error_type,
-                error_message=error_message,
-                fix_pattern="generic_fallback",
-                context_patch=fallback_patch
-            )
+            # FALLBACK'İ KAYDETMEYİ BIRAKTIK - sadece bellekte tutuyoruz
 
     def get_context_patch(self, session_id: str) -> Optional[str]:
         return self._pending_patches.pop(session_id, None)

@@ -1,0 +1,11 @@
+name: hermes-self-healing-context
+version: "2.0.0"
+description: Intercepts runtime errors and dynamically patches the context window using local SQLite FTS5 memory.
+kind: plugin
+category: general
+maintainer: forumevi
+provides_hooks:
+  - on_session_start
+  - on_session_end
+  - post_tool_call
+  - pre_llm_call

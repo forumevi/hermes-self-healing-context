@@ -102,12 +102,13 @@ class TestFTS5MemoryPatcher:
         """Should store and retrieve error patterns."""
         patcher = MemoryPatcher(db_path=":memory:")
         patcher.learn_from_outcome(
+            tool_name="fetch_url",
             error_type="TimeoutError",
             error_message="Connection timeout occurred",
             fix_pattern="Retry with exponential backoff",
             context_patch="System Note: Retry the connection"
         )
-        result = patcher.query_patch("TimeoutError", "Connection timeout")
+        result = patcher.query_patch("fetch_url", "TimeoutError", "Connection timeout")
         assert result is not None
         assert "Retry" in result
         patcher.close()
@@ -115,22 +116,36 @@ class TestFTS5MemoryPatcher:
     def test_no_patch_for_unknown_error(self):
         """Should return None for unknown errors."""
         patcher = MemoryPatcher(db_path=":memory:")
-        result = patcher.query_patch("UnknownError", "Something weird")
+        result = patcher.query_patch("some_tool", "UnknownError", "Something weird")
         assert result is None
+        patcher.close()
+    
+    def test_patch_is_scoped_to_tool(self):
+        """A note learned for one tool must not be returned for another tool's error."""
+        patcher = MemoryPatcher(db_path=":memory:")
+        patcher.learn_from_outcome(
+            tool_name="read_file",
+            error_type="ValueError",
+            error_message="Invalid input",
+            fix_pattern="check path",
+            context_patch="System Note: Previous tool 'read_file' failed",
+        )
+        assert patcher.query_patch("bash", "ValueError", "Invalid input") is None
+        assert patcher.query_patch("read_file", "ValueError", "Invalid input") is not None
         patcher.close()
     
     def test_lazy_initialization(self):
         """Should not create database until first use."""
         patcher = MemoryPatcher(db_path=":memory:")
         assert patcher._conn is None
-        patcher.query_patch("test", "test")
+        patcher.query_patch("test", "test", "test")
         assert patcher._conn is not None
         patcher.close()
     
     def test_graceful_shutdown(self):
         """Should close database connection gracefully."""
         patcher = MemoryPatcher(db_path=":memory:")
-        patcher.query_patch("test", "test")
+        patcher.query_patch("test", "test", "test")
         patcher.close()
         assert patcher._conn is None
 
@@ -233,7 +248,7 @@ class TestSecurity:
         try:
             patcher = MemoryPatcher(db_path=db_path)
             malicious_input = '"; DROP TABLE error_patterns_content; --'
-            result = patcher.query_patch(malicious_input, malicious_input)
+            result = patcher.query_patch(malicious_input, malicious_input, malicious_input)
             assert True
         finally:
             if patcher:

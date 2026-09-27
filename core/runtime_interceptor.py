@@ -10,7 +10,7 @@ class RuntimeInterceptor:
         self._pending_patches: dict = {}
 
     def handle_error(self, session_id: str, tool_name: str, error_type: str, error_message: str) -> None:
-        patch = self.patcher.query_patch(error_type, error_message)
+        patch = self.patcher.query_patch(tool_name, error_type, error_message)
         
         if patch:
             logger.info("[RuntimeInterceptor] Found existing patch in FTS5 memory.")

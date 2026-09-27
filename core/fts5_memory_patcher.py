@@ -25,7 +25,7 @@ class MemoryPatcher:
         try:
             self._conn.execute("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS error_patterns 
-                USING fts5(error_type, error_message, fix_pattern, context_patch)
+                USING fts5(tool_name, error_type, error_message, fix_pattern, context_patch)
             """)
             self._conn.commit()
             self._fts5_initialized = True
@@ -43,18 +43,20 @@ class MemoryPatcher:
         text = re.sub(r'[^\w\s]', ' ', text)
         return text.strip()
 
-    def query_patch(self, error_type: str, error_message: str) -> Optional[str]:
+    def query_patch(self, tool_name: str, error_type: str, error_message: str) -> Optional[str]:
         conn = self._get_connection()
         self._setup_fts5()
         
+        safe_tool = self._sanitize_fts5_input(tool_name)
         safe_type = self._sanitize_fts5_input(error_type)
         safe_msg = self._sanitize_fts5_input(error_message)
         
-        if not safe_type and not safe_msg:
+        if not safe_tool or (not safe_type and not safe_msg):
             return None
         
         query = "SELECT context_patch FROM error_patterns WHERE error_patterns MATCH ? LIMIT 1"
         search_term = f'"{safe_type}" OR "{safe_msg}"' if safe_type and safe_msg else f'"{safe_type or safe_msg}"'
+        search_term = f'tool_name:"{safe_tool}" AND ({search_term})'
         
         try:
             cursor = conn.execute(query, (search_term,))
@@ -63,13 +65,13 @@ class MemoryPatcher:
         except sqlite3.OperationalError:
             return None
 
-    def learn_from_outcome(self, error_type: str, error_message: str, fix_pattern: str, context_patch: str):
+    def learn_from_outcome(self, tool_name: str, error_type: str, error_message: str, fix_pattern: str, context_patch: str):
         conn = self._get_connection()
         self._setup_fts5()
         conn.execute("""
-            INSERT INTO error_patterns (error_type, error_message, fix_pattern, context_patch)
-            VALUES (?, ?, ?, ?)
-        """, (error_type, error_message, fix_pattern, context_patch))
+            INSERT INTO error_patterns (tool_name, error_type, error_message, fix_pattern, context_patch)
+            VALUES (?, ?, ?, ?, ?)
+        """, (tool_name, error_type, error_message, fix_pattern, context_patch))
         conn.commit()
 
     def close(self):

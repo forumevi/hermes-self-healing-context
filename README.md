@@ -19,7 +19,6 @@ The plugin is built with a modular, decoupled architecture to ensure stability a
 | `plugin.py` | Main entry point. Implements the Hermes Agent standard plugin interface and manages hook registrations. |
 | `core/runtime_interceptor.py` | The brain of the operation. Classifies errors, manages the patch generation pipeline, and coordinates with the memory patcher. |
 | `core/fts5_memory_patcher.py` | Handles all SQLite FTS5 interactions. Manages lazy database initialization, querying for historical patches, and learning from new outcomes. |
-| `core/error_analyzer.py` | Tracks error frequency and detects recurring patterns to provide proactive recommendations during session end. |
 | `core/metrics.py` | Collects performance data (latency, hit rate, error counts) per session for observability. |
 
 ##  Installation

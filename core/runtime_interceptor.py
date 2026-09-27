@@ -9,24 +9,26 @@ class RuntimeInterceptor:
         self.config = config
         self._pending_patches: dict = {}
 
-    def handle_error(self, tool_name: str, error_type: str, error_message: str) -> None:
-        # MADDE 4: Artık post_tool_call tarafından gerçekten çağrılıyor
+    def handle_error(self, session_id: str, tool_name: str, error_type: str, error_message: str) -> None:
         patch = self.patcher.query_patch(error_type, error_message)
         
         if patch:
             logger.info("[RuntimeInterceptor] Found existing patch in FTS5 memory.")
-            self._pending_patches["default"] = patch
+            self._pending_patches[session_id] = patch
         else:
             logger.warning("[RuntimeInterceptor] No historical patch found. Generating generic fallback.")
-            self._pending_patches["default"] = f"System Note: Previous tool '{tool_name}' failed with {error_type}. Please adjust parameters or try an alternative approach."
+            fallback_patch = f"System Note: Previous tool '{tool_name}' failed with {error_type}. Please adjust parameters or try an alternative approach."
+            self._pending_patches[session_id] = fallback_patch
             
-            # MADDE 4: Öğrenme yolunu da wire ettik
             self.patcher.learn_from_outcome(
                 error_type=error_type,
                 error_message=error_message,
                 fix_pattern="generic_fallback",
-                context_patch=self._pending_patches["default"]
+                context_patch=fallback_patch
             )
 
     def get_context_patch(self, session_id: str) -> Optional[str]:
-        return self._pending_patches.pop("default", None)
+        return self._pending_patches.pop(session_id, None)
+
+    def clear_session(self, session_id: str) -> None:
+        self._pending_patches.pop(session_id, None)
